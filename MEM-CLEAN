@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+"""
+MEM-CLEAN - System Performance Monitor and Optimizer
+A comprehensive tool for monitoring and optimizing system performance
+"""
+
+import os
+import sys
+import subprocess
+import shutil
+import psutil
+import time
+from pathlib import Path
+from datetime import datetime
+import argparse
+
+class Colors:
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    PURPLE = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    RESET = '\033[0m'
+
+class MemClean:
+    def __init__(self):
+        self.large_file_threshold = 100 * 1024 * 1024  # 100MB default
+        
+    def print_banner(self):
+        banner = f"""
+{Colors.CYAN}{Colors.BOLD}
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║    ███╗   ███╗███████╗███╗   ███╗      ██████╗██╗     ███████╗ █████╗ ███╗   ║
+║    ████╗ ████║██╔════╝████╗ ████║     ██╔════╝██║     ██╔════╝██╔══██╗████╗  ║
+║    ██╔████╔██║█████╗  ██╔████╔██║     ██║     ██║     █████╗  ███████║██╔██╗ ║
+║    ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║     ██║     ██║     ██╔══╝  ██╔══██║██║╚██╗║
+║    ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║     ╚██████╗███████╗███████╗██║  ██║██║ ╚████║
+║    ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝      ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝
+║                                                                              ║
+║              System Performance Monitor & Memory Optimizer                  ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{Colors.RESET}
+                            {Colors.WHITE}CREATED BY '{Colors.PURPLE}WickedSyntax{Colors.WHITE}'{Colors.RESET}
+
+"""
+        print(banner)
+
+    def get_system_info(self):
+        """Get comprehensive system information"""
+        # Memory information
+        memory = psutil.virtual_memory()
+        memory_used_percent = memory.percent
+        memory_total_gb = memory.total / (1024**3)
+        memory_used_gb = memory.used / (1024**3)
+        memory_available_gb = memory.available / (1024**3)
+        
+        # CPU information
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq()
+        
+        # Disk information
+        disk = psutil.disk_usage('/')
+        disk_used_percent = (disk.used / disk.total) * 100
+        disk_total_gb = disk.total / (1024**3)
+        disk_used_gb = disk.used / (1024**3)
+        disk_free_gb = disk.free / (1024**3)
+        
+        return {
+            'memory': {
+                'percent': memory_used_percent,
+                'total_gb': memory_total_gb,
+                'used_gb': memory_used_gb,
+                'available_gb': memory_available_gb
+            },
+            'cpu': {
+                'percent': cpu_percent,
+                'count': cpu_count,
+                'freq': cpu_freq.current if cpu_freq else None
+            },
+            'disk': {
+                'percent': disk_used_percent,
+                'total_gb': disk_total_gb,
+                'used_gb': disk_used_gb,
+                'free_gb': disk_free_gb
+            }
+        }
+
+    def get_color_for_percentage(self, percent):
+        """Return appropriate color based on usage percentage"""
+        if percent < 50:
+            return Colors.GREEN
+        elif percent < 80:
+            return Colors.YELLOW
+        else:
+            return Colors.RED
+
+    def display_system_status(self):
+        """Display current system status"""
+        info = self.get_system_info()
+        
+        print(f"{Colors.BOLD}═══════════════════ SYSTEM STATUS ═══════════════════{Colors.RESET}\n")
+        
+        # RAM Status
+        ram_color = self.get_color_for_percentage(info['memory']['percent'])
+        print(f"🧠 {Colors.BOLD}RAM USAGE:{Colors.RESET}")
+        print(f"   {ram_color}█{Colors.RESET} {info['memory']['percent']:.1f}% used "
+              f"({info['memory']['used_gb']:.1f}GB / {info['memory']['total_gb']:.1f}GB)")
+        print(f"   Available: {info['memory']['available_gb']:.1f}GB\n")
+        
+        # CPU Status
+        cpu_color = self.get_color_for_percentage(info['cpu']['percent'])
+        print(f"⚡ {Colors.BOLD}CPU USAGE:{Colors.RESET}")
+        print(f"   {cpu_color}█{Colors.RESET} {info['cpu']['percent']:.1f}% "
+              f"({info['cpu']['count']} cores)")
+        if info['cpu']['freq']:
+            print(f"   Frequency: {info['cpu']['freq']:.0f} MHz\n")
+        else:
+            print()
+        
+        # Storage Status
+        storage_color = self.get_color_for_percentage(info['disk']['percent'])
+        print(f"💾 {Colors.BOLD}STORAGE USAGE:{Colors.RESET}")
+        print(f"   {storage_color}█{Colors.RESET} {info['disk']['percent']:.1f}% used "
+              f"({info['disk']['used_gb']:.1f}GB / {info['disk']['total_gb']:.1f}GB)")
+        print(f"   Free Space: {info['disk']['free_gb']:.1f}GB\n")
+
+    def clear_memory_cache(self):
+        """Clear system memory cache (requires sudo)"""
+        print(f"{Colors.YELLOW}🧹 Clearing memory cache...{Colors.RESET}")
+        
+        try:
+            # Sync file systems
+            subprocess.run(['sync'], check=True, capture_output=True)
+            
+            # Clear page cache, dentries and inodes
+            commands = [
+                'echo 1 > /proc/sys/vm/drop_caches',
+                'echo 2 > /proc/sys/vm/drop_caches', 
+                'echo 3 > /proc/sys/vm/drop_caches'
+            ]
+            
+            for cmd in commands:
+                result = subprocess.run(['sudo', 'sh', '-c', cmd], 
+                                      capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"{Colors.RED}Warning: Could not execute: {cmd}{Colors.RESET}")
+            
+            print(f"{Colors.GREEN}✅ Memory cache cleared successfully!{Colors.RESET}")
+            
+        except subprocess.CalledProcessError as e:
+            print(f"{Colors.RED}❌ Error clearing cache: {e}{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}❌ Unexpected error: {e}{Colors.RESET}")
+
+    def find_large_files(self, directory="/home", min_size_mb=100, limit=20):
+        """Find large files in the specified directory"""
+        print(f"{Colors.YELLOW}🔍 Scanning for files larger than {min_size_mb}MB...{Colors.RESET}")
+        
+        large_files = []
+        min_size_bytes = min_size_mb * 1024 * 1024
+        
+        try:
+            for root, dirs, files in os.walk(directory):
+                # Skip some system directories that might cause permission issues
+                dirs[:] = [d for d in dirs if not d.startswith('.') and 
+                          d not in ['proc', 'sys', 'dev', 'run', 'tmp']]
+                
+                for file in files:
+                    try:
+                        file_path = os.path.join(root, file)
+                        size = os.path.getsize(file_path)
+                        
+                        if size > min_size_bytes:
+                            large_files.append({
+                                'path': file_path,
+                                'size_mb': size / (1024 * 1024),
+                                'size_gb': size / (1024 * 1024 * 1024)
+                            })
+                    except (OSError, PermissionError):
+                        continue
+                        
+        except Exception as e:
+            print(f"{Colors.RED}Error scanning directory: {e}{Colors.RESET}")
+            return []
+        
+        # Sort by size (largest first) and limit results
+        large_files.sort(key=lambda x: x['size_mb'], reverse=True)
+        return large_files[:limit]
+
+    def display_large_files(self, large_files):
+        """Display found large files"""
+        if not large_files:
+            print(f"{Colors.GREEN}✅ No large files found!{Colors.RESET}")
+            return
+        
+        print(f"{Colors.BOLD}\n📁 LARGE FILES DETECTED:{Colors.RESET}")
+        print(f"{'Size (GB)':<10} {'Size (MB)':<12} {'File Path'}")
+        print("─" * 80)
+        
+        for file in large_files:
+            if file['size_gb'] >= 1.0:
+                size_str = f"{file['size_gb']:.2f} GB"
+            else:
+                size_str = f"{file['size_mb']:.1f} MB"
+            
+            print(f"{size_str:<10} {file['size_mb']:<12.1f} {file['path']}")
+
+    def clean_temp_files(self):
+        """Clean temporary files and caches"""
+        print(f"{Colors.YELLOW}🗑️  Cleaning temporary files...{Colors.RESET}")
+        
+        temp_dirs = [
+            '/tmp',
+            '/var/tmp',
+            os.path.expanduser('~/.cache'),
+            os.path.expanduser('~/.local/share/Trash')
+        ]
+        
+        total_freed = 0
+        
+        for temp_dir in temp_dirs:
+            if os.path.exists(temp_dir):
+                try:
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file in files:
+                            try:
+                                file_path = os.path.join(root, file)
+                                size = os.path.getsize(file_path)
+                                os.remove(file_path)
+                                total_freed += size
+                            except (OSError, PermissionError):
+                                continue
+                except Exception:
+                    continue
+        
+        print(f"{Colors.GREEN}✅ Cleaned {total_freed / (1024*1024):.1f}MB of temporary files{Colors.RESET}")
+
+    def get_process_info(self):
+        """Get information about running processes"""
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'memory_percent', 'cpu_percent']):
+            try:
+                proc_info = proc.info
+                if proc_info['memory_percent'] > 1.0:  # Only show processes using > 1% RAM
+                    processes.append(proc_info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # Sort by memory usage
+        processes.sort(key=lambda x: x['memory_percent'], reverse=True)
+        return processes[:10]  # Top 10 memory consumers
+
+    def display_top_processes(self):
+        """Display top memory consuming processes"""
+        processes = self.get_process_info()
+        
+        print(f"{Colors.BOLD}\n🔥 TOP MEMORY CONSUMERS:{Colors.RESET}")
+        print(f"{'PID':<8} {'Memory %':<10} {'CPU %':<8} {'Process Name'}")
+        print("─" * 50)
+        
+        for proc in processes:
+            print(f"{proc['pid']:<8} {proc['memory_percent']:<10.1f} "
+                  f"{proc['cpu_percent']:<8.1f} {proc['name']}")
+
+    def interactive_menu(self):
+        """Display interactive menu"""
+        while True:
+            print(f"\n{Colors.BOLD}═══════════════════ MENU ═══════════════════{Colors.RESET}")
+            print(f"{Colors.GREEN}1.{Colors.RESET} Show System Status")
+            print(f"{Colors.GREEN}2.{Colors.RESET} Clear Memory Cache (requires sudo)")
+            print(f"{Colors.GREEN}3.{Colors.RESET} Find Large Files")
+            print(f"{Colors.GREEN}4.{Colors.RESET} Clean Temporary Files")
+            print(f"{Colors.GREEN}5.{Colors.RESET} Show Top Memory Consumers")
+            print(f"{Colors.GREEN}6.{Colors.RESET} Full System Cleanup")
+            print(f"{Colors.RED}0.{Colors.RESET} Exit")
+            
+            choice = input(f"\n{Colors.CYAN}Select option: {Colors.RESET}")
+            
+            if choice == '1':
+                self.display_system_status()
+            elif choice == '2':
+                self.clear_memory_cache()
+            elif choice == '3':
+                directory = input(f"Directory to scan (default: /home): ") or "/home"
+                size_mb = input(f"Minimum file size in MB (default: 100): ") or "100"
+                try:
+                    size_mb = int(size_mb)
+                    large_files = self.find_large_files(directory, size_mb)
+                    self.display_large_files(large_files)
+                except ValueError:
+                    print(f"{Colors.RED}Invalid size value!{Colors.RESET}")
+            elif choice == '4':
+                self.clean_temp_files()
+            elif choice == '5':
+                self.display_top_processes()
+            elif choice == '6':
+                print(f"{Colors.YELLOW}🚀 Performing full system cleanup...{Colors.RESET}")
+                self.clean_temp_files()
+                self.clear_memory_cache()
+                print(f"{Colors.GREEN}✅ Full cleanup completed!{Colors.RESET}")
+            elif choice == '0':
+                print(f"{Colors.GREEN}👋 Goodbye!{Colors.RESET}")
+                break
+            else:
+                print(f"{Colors.RED}Invalid option!{Colors.RESET}")
+
+    def run(self, args):
+        """Main run method"""
+        self.print_banner()
+        
+        if args.status:
+            self.display_system_status()
+        elif args.clean:
+            self.clear_memory_cache()
+        elif args.large_files:
+            large_files = self.find_large_files(args.directory, args.size, args.limit)
+            self.display_large_files(large_files)
+        elif args.temp_clean:
+            self.clean_temp_files()
+        elif args.processes:
+            self.display_top_processes()
+        else:
+            # Default: show status and interactive menu
+            self.display_system_status()
+            self.interactive_menu()
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="MEM-CLEAN - System Performance Monitor and Optimizer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ./MEM-CLEAN                    # Interactive mode
+  ./MEM-CLEAN --status           # Show system status only
+  ./MEM-CLEAN --clean            # Clear memory cache
+  ./MEM-CLEAN --large-files      # Find large files
+  ./MEM-CLEAN --temp-clean       # Clean temp files
+        """
+    )
+    
+    parser.add_argument('--status', action='store_true', help='Show system status')
+    parser.add_argument('--clean', action='store_true', help='Clear memory cache')
+    parser.add_argument('--large-files', action='store_true', help='Find large files')
+    parser.add_argument('--temp-clean', action='store_true', help='Clean temporary files')
+    parser.add_argument('--processes', action='store_true', help='Show top processes')
+    parser.add_argument('--directory', default='/home', help='Directory to scan for large files')
+    parser.add_argument('--size', type=int, default=100, help='Minimum file size in MB')
+    parser.add_argument('--limit', type=int, default=20, help='Limit number of large files shown')
+    
+    args = parser.parse_args()
+    
+    # Check if psutil is available
+    try:
+        import psutil
+    except ImportError:
+        print(f"{Colors.RED}Error: psutil module not found!{Colors.RESET}")
+        print(f"{Colors.YELLOW}Install it with: pip3 install psutil{Colors.RESET}")
+        sys.exit(1)
+    
+    mem_clean = MemClean()
+    
+    try:
+        mem_clean.run(args)
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}Operation cancelled by user{Colors.RESET}")
+    except Exception as e:
+        print(f"{Colors.RED}Error: {e}{Colors.RESET}")
+
+if __name__ == "__main__":
+    main()
